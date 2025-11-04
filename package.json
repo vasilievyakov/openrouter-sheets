@@ -9,7 +9,8 @@
     "test": "node index.js",
     "check": "node check-config.js",
     "test:openrouter": "node test-openrouter.js",
-    "test:sheets": "node test-googlesheets.js"
+    "test:sheets": "node test-googlesheets.js",
+    "test:all": "node test-system.js"
   },
   "keywords": [
     "google-sheets",
