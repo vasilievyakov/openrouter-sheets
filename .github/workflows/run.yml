@@ -9,17 +9,6 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-name: Process Google Sheet
-
-on:
-  repository_dispatch:
-    types: [run-openrouter]
-
-jobs:
-  run:
-    runs-on: ubuntu-latest
-    
-    steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -88,4 +77,3 @@ jobs:
       - name: Cleanup
         if: always()
         run: rm -f google-credentials.json
-
