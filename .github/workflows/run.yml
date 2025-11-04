@@ -13,10 +13,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '20'
-          check-latest: false
+        run: |
+          echo "Setting up Node.js..."
+          curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+          sudo apt-get install -y nodejs
+          node --version
+          npm --version
 
       - name: Verify files
         run: |
