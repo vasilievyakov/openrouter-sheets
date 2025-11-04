@@ -5,7 +5,7 @@
 
 // URL для GitHub Actions repository_dispatch
 // Формат: https://api.github.com/repos/USERNAME/REPO_NAME/dispatches
-const WEBHOOK_URL = "https://api.github.com/repos/YOUR_USERNAME/YOUR_REPO/dispatches";
+const WEBHOOK_URL = "https://api.github.com/repos/vasilievyakov/openrouter-sheets/dispatches";
 
 // GitHub Personal Access Token (PAT) с правами repo
 // Создайте токен здесь: https://github.com/settings/tokens
