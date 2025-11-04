@@ -1,0 +1,347 @@
+import fetch from "node-fetch";
+import { google } from "googleapis";
+import { readFileSync, existsSync } from "fs";
+
+const OPENROUTER_KEY = process.env.OPENROUTER_KEY;
+const GOOGLE_CREDENTIALS = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+const MODEL = process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini";
+const BATCH_SIZE = parseInt(process.env.BATCH_SIZE || "20");
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 2000; // мс
+const RATE_LIMIT_DELAY = 100; // задержка между батчами для Google Sheets API (100 req/sec)
+
+// Кэш для уже обработанных запросов (в памяти)
+const cache = new Map();
+
+/**
+ * Инициализирует Google Sheets API клиент
+ */
+function initGoogleSheets() {
+  if (!GOOGLE_CREDENTIALS) {
+    throw new Error("GOOGLE_APPLICATION_CREDENTIALS environment variable is required");
+  }
+
+  let credentials;
+
+  // Проверяем, является ли значение путем к файлу
+  if (existsSync(GOOGLE_CREDENTIALS)) {
+    try {
+      credentials = JSON.parse(readFileSync(GOOGLE_CREDENTIALS, "utf8"));
+    } catch (error) {
+      throw new Error(`Failed to read credentials file: ${error.message}`);
+    }
+  } else {
+    // Иначе пытаемся парсить как JSON строку
+    try {
+      credentials = JSON.parse(GOOGLE_CREDENTIALS);
+    } catch (error) {
+      throw new Error(`Invalid GOOGLE_APPLICATION_CREDENTIALS JSON: ${error.message}`);
+    }
+  }
+
+  const auth = new google.auth.GoogleAuth({
+    credentials,
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"]
+  });
+
+  return google.sheets({ version: "v4", auth });
+}
+
+/**
+ * Выполняет запрос к OpenRouter API с retry логикой
+ */
+async function callOpenRouter(text, prompt, retryCount = 0) {
+  const cacheKey = `${prompt}:${text}`;
+  
+  // Проверяем кэш
+  if (cache.has(cacheKey)) {
+    console.log(`[CACHE] Использован кэш для: ${text.substring(0, 50)}...`);
+    return cache.get(cacheKey);
+  }
+
+  const body = {
+    model: MODEL,
+    messages: [
+      { role: "system", content: "Ты анализируешь новости. Отвечай кратко и точно." },
+      { role: "user", content: `${prompt}\n\n${text}` }
+    ],
+    temperature: 0.3
+  };
+
+  try {
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${OPENROUTER_KEY}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": process.env.HTTP_REFERER || "https://github.com/openrouter-sheets",
+        "X-Title": "Google Sheets OpenRouter Integration"
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      
+      // Обработка rate limit (429)
+      if (res.status === 429) {
+        const retryAfter = parseInt(res.headers.get("retry-after") || "60");
+        if (retryCount < MAX_RETRIES) {
+          console.log(`[RETRY] Rate limit, ожидание ${retryAfter} секунд...`);
+          await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+          return callOpenRouter(text, prompt, retryCount + 1);
+        }
+        throw new Error(`Rate limit exceeded after ${MAX_RETRIES} retries`);
+      }
+
+      // Обработка серверных ошибок (500, 502, 503)
+      if (res.status >= 500 && retryCount < MAX_RETRIES) {
+        const delay = RETRY_DELAY * Math.pow(2, retryCount); // Exponential backoff
+        console.log(`[RETRY] Server error ${res.status}, повтор через ${delay}мс...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return callOpenRouter(text, prompt, retryCount + 1);
+      }
+
+      throw new Error(`OpenRouter API error: ${res.status} - ${errorText}`);
+    }
+
+    const data = await res.json();
+    const result = data?.choices?.[0]?.message?.content || "";
+
+    // Сохраняем в кэш
+    cache.set(cacheKey, result);
+
+    return result;
+  } catch (error) {
+    if (retryCount < MAX_RETRIES && !error.message.includes("Rate limit")) {
+      const delay = RETRY_DELAY * Math.pow(2, retryCount);
+      console.log(`[RETRY] Ошибка сети, повтор через ${delay}мс: ${error.message}`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return callOpenRouter(text, prompt, retryCount + 1);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Обрабатывает батч текстов через OpenRouter
+ */
+async function processBatch(texts, prompt) {
+  const promises = texts.map(text => 
+    callOpenRouter(text || "", prompt).catch(error => {
+      console.error(`Ошибка обработки текста: ${error.message}`);
+      return `[ОШИБКА: ${error.message}]`;
+    })
+  );
+
+  return Promise.all(promises);
+}
+
+/**
+ * Получает данные из Google Sheet
+ */
+async function getSheetData(sheets, spreadsheetId, sheetName) {
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${sheetName}!A2:A`
+    });
+
+    const rows = response.data.values || [];
+    return rows.map(row => row[0] || "").filter(text => text.trim() !== "");
+  } catch (error) {
+    throw new Error(`Ошибка чтения данных из таблицы: ${error.message}`);
+  }
+}
+
+/**
+ * Конвертирует номер колонки в букву (A, B, ..., Z, AA, AB, ...)
+ */
+function columnIndexToLetter(columnIndex) {
+  let result = "";
+  while (columnIndex > 0) {
+    columnIndex--;
+    result = String.fromCharCode(65 + (columnIndex % 26)) + result;
+    columnIndex = Math.floor(columnIndex / 26);
+  }
+  return result;
+}
+
+/**
+ * Записывает результаты в Google Sheet с учетом rate limiting
+ */
+async function writeResults(sheets, spreadsheetId, sheetName, results, startRow, columnIndex) {
+  const values = results.map(r => [r || ""]);
+  const columnLetter = columnIndexToLetter(columnIndex);
+  const range = `${sheetName}!${columnLetter}${startRow + 2}:${columnLetter}${startRow + values.length + 1}`;
+
+  try {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range,
+      valueInputOption: "RAW",
+      requestBody: { values }
+    });
+  } catch (error) {
+    throw new Error(`Ошибка записи в таблицу: ${error.message}`);
+  }
+}
+
+/**
+ * Валидация входных параметров
+ */
+function validateInputs(spreadsheetId, sheetName, prompt, columnIndex) {
+  const errors = [];
+  
+  if (!spreadsheetId || typeof spreadsheetId !== "string" || spreadsheetId.trim() === "") {
+    errors.push("spreadsheetId обязателен и должен быть непустой строкой");
+  }
+  
+  if (!sheetName || typeof sheetName !== "string" || sheetName.trim() === "") {
+    errors.push("sheetName обязателен и должен быть непустой строкой");
+  }
+  
+  if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
+    errors.push("prompt обязателен и должен быть непустой строкой");
+  }
+  
+  if (!Number.isInteger(columnIndex) || columnIndex < 1) {
+    errors.push("columnIndex должен быть целым числом >= 1");
+  }
+  
+  if (errors.length > 0) {
+    throw new Error(`Ошибки валидации:\n${errors.map(e => `  - ${e}`).join("\n")}`);
+  }
+}
+
+/**
+ * Основная функция обработки таблицы
+ */
+export async function processSheet(spreadsheetId, sheetName, prompt, columnIndex) {
+  if (!OPENROUTER_KEY) {
+    throw new Error("OPENROUTER_KEY environment variable is required");
+  }
+
+  // Валидация входных данных
+  validateInputs(spreadsheetId, sheetName, prompt, columnIndex);
+
+  console.log(`\n🚀 Начало обработки таблицы:`);
+  console.log(`   Spreadsheet ID: ${spreadsheetId}`);
+  console.log(`   Sheet: ${sheetName}`);
+  console.log(`   Prompt: ${prompt}`);
+  console.log(`   Column: ${columnIndex}`);
+  console.log(`   Model: ${MODEL}`);
+  console.log(`   Batch size: ${BATCH_SIZE}\n`);
+
+  const sheets = initGoogleSheets();
+  
+  // Получаем данные из таблицы
+  console.log("📖 Чтение данных из таблицы...");
+  const texts = await getSheetData(sheets, spreadsheetId, sheetName);
+  console.log(`   Найдено ${texts.length} строк для обработки\n`);
+
+  if (texts.length === 0) {
+    console.log("⚠️  Нет данных для обработки");
+    return;
+  }
+
+  let processed = 0;
+  const total = texts.length;
+
+  // Обрабатываем батчами
+  for (let i = 0; i < texts.length; i += BATCH_SIZE) {
+    const batch = texts.slice(i, i + BATCH_SIZE);
+    const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+    const totalBatches = Math.ceil(texts.length / BATCH_SIZE);
+
+    console.log(`\n📦 Батч ${batchNumber}/${totalBatches} (строки ${i + 1}-${Math.min(i + BATCH_SIZE, total)})`);
+
+    // Обрабатываем батч
+    const results = await processBatch(batch, prompt);
+
+    // Записываем результаты
+    await writeResults(sheets, spreadsheetId, sheetName, results, i, columnIndex);
+
+    processed += batch.length;
+    const progress = ((processed / total) * 100).toFixed(1);
+    console.log(`   ✅ Обработано: ${processed}/${total} (${progress}%)`);
+
+    // Задержка для соблюдения rate limit Google Sheets API
+    if (i + BATCH_SIZE < texts.length) {
+      await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_DELAY));
+    }
+  }
+
+  console.log(`\n✨ Обработка завершена! Всего обработано: ${processed} строк`);
+}
+
+/**
+ * Обработка webhook от GitHub Actions или прямого вызова
+ */
+async function main() {
+  let payload = {};
+
+  // Проверяем, запущено ли через GitHub Actions
+  if (process.env.GITHUB_EVENT_PATH) {
+    try {
+      const fs = await import("fs");
+      const eventData = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
+      payload = eventData.client_payload || {};
+      console.log("📥 Получены данные из GitHub Actions события");
+    } catch (error) {
+      console.error(`Ошибка чтения GitHub события: ${error.message}`);
+    }
+  }
+
+  // Или из аргументов командной строки (для локального тестирования)
+  const args = process.argv.slice(2);
+  if (args.length >= 4) {
+    payload.spreadsheetId = args[0];
+    payload.sheetName = args[1];
+    payload.prompt = args[2];
+    payload.columnIndex = parseInt(args[3]);
+    console.log("📥 Получены данные из аргументов командной строки");
+  }
+
+  // Валидация payload
+  const missingFields = [];
+  if (!payload.spreadsheetId) missingFields.push("spreadsheetId");
+  if (!payload.sheetName) missingFields.push("sheetName");
+  if (!payload.prompt) missingFields.push("prompt");
+  if (!payload.columnIndex) missingFields.push("columnIndex");
+
+  if (missingFields.length > 0) {
+    console.error("\n❌ Недостаточно данных для обработки");
+    console.error(`Отсутствуют поля: ${missingFields.join(", ")}`);
+    console.error("\nИспользование:");
+    console.error("  node index.js <spreadsheetId> <sheetName> <prompt> <columnIndex>");
+    console.error("\nПример:");
+    console.error('  node index.js "1abc123..." "Sheet1" "Определи бренд" 2');
+    console.error("\nИли через GitHub Actions repository_dispatch");
+    console.error("\n💡 Проверьте, что:");
+    console.error("   - Все переменные окружения установлены");
+    console.error("   - Payload содержит все необходимые поля");
+    console.error("   - GitHub Actions правильно передает client_payload");
+    process.exit(1);
+  }
+
+  try {
+    await processSheet(
+      payload.spreadsheetId,
+      payload.sheetName,
+      payload.prompt,
+      payload.columnIndex
+    );
+  } catch (error) {
+    console.error(`\n❌ Критическая ошибка: ${error.message}`);
+    console.error(error.stack);
+    process.exit(1);
+  }
+}
+
+// Запуск main функции
+main().catch(error => {
+  console.error("Fatal error:", error);
+  process.exit(1);
+});
+

@@ -1,0 +1,30 @@
+{
+  "name": "openrouter-sheets",
+  "version": "1.0.0",
+  "description": "Google Sheets integration with OpenRouter API for batch news processing",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node index.js",
+    "check": "node check-config.js",
+    "test:openrouter": "node test-openrouter.js",
+    "test:sheets": "node test-googlesheets.js"
+  },
+  "keywords": [
+    "google-sheets",
+    "openrouter",
+    "llm",
+    "automation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "googleapis": "^144.0.0",
+    "node-fetch": "^3.3.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
+

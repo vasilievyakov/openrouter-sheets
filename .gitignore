@@ -1,0 +1,12 @@
+node_modules/
+.env
+*.log
+.DS_Store
+*.json
+!package.json
+!package-lock.json
+google-credentials.json
+.env.local
+.env.*.local
+
+
