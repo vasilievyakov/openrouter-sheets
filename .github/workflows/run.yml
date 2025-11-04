@@ -16,17 +16,34 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          # cache: 'npm' - временно отключен из-за ошибки
+
+      - name: Verify files
+        run: |
+          echo "Checking files..."
+          ls -la
+          if [ -f package.json ]; then
+            echo "✅ package.json exists"
+            cat package.json
+          else
+            echo "❌ package.json not found"
+            exit 1
+          fi
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          echo "Installing dependencies..."
+          npm install
 
       - name: Setup Google Credentials
         env:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
         run: |
+          if [ -z "$GOOGLE_CREDENTIALS" ]; then
+            echo "❌ GOOGLE_APPLICATION_CREDENTIALS secret is not set"
+            exit 1
+          fi
           echo "$GOOGLE_CREDENTIALS" > google-credentials.json
-          export GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/google-credentials.json
+          echo "✅ Credentials file created"
 
       - name: Process Sheet
         env:
@@ -37,7 +54,12 @@ jobs:
           HTTP_REFERER: ${{ github.repositoryUrl }}
           GITHUB_EVENT_PATH: ${{ github.event_path }}
         run: |
+          if [ -z "$OPENROUTER_KEY" ]; then
+            echo "❌ OPENROUTER_KEY secret is not set"
+            exit 1
+          fi
           export GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/google-credentials.json
+          echo "Starting processing..."
           node index.js
 
       - name: Cleanup
