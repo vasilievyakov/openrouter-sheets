@@ -10,7 +10,8 @@
     "check": "node check-config.js",
     "test:openrouter": "node test-openrouter.js",
     "test:sheets": "node test-googlesheets.js",
-    "test:all": "node test-system.js"
+    "test:all": "node test-system.js",
+    "check:workflow": "node check-workflow-status.js"
   },
   "keywords": [
     "google-sheets",
