@@ -3,6 +3,7 @@ name: Process Google Sheet
 on:
   repository_dispatch:
     types: [run-openrouter]
+  workflow_dispatch:  # Добавляем возможность ручного запуска
 
 jobs:
   run:
@@ -12,7 +13,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: main  # Явно указываем ветку main
+          ref: ${{ github.ref || 'refs/heads/main' }}  # Используем текущий ref или main
+
+      - name: Verify workflow version
+        run: |
+          echo "Checking workflow file..."
+          if grep -q "Checking Node.js" .github/workflows/run.yml; then
+            echo "✅ Using latest workflow version"
+          else
+            echo "❌ Old workflow version detected!"
+            echo "Current workflow content:"
+            head -20 .github/workflows/run.yml
+            exit 1
+          fi
 
       - name: Setup Node.js
         run: |
