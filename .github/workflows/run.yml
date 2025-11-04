@@ -83,6 +83,14 @@ jobs:
             echo "❌ OPENROUTER_KEY secret is not set"
             exit 1
           fi
+          echo "🔑 OPENROUTER_KEY проверка:"
+          echo "   - Установлен: ✅"
+          echo "   - Длина: ${#OPENROUTER_KEY} символов"
+          echo "   - Начинается с: ${OPENROUTER_KEY:0:3}..."
+          if [ ${#OPENROUTER_KEY} -lt 10 ]; then
+            echo "❌ OPENROUTER_KEY слишком короткий (${#OPENROUTER_KEY} символов). Ожидается минимум 10 символов"
+            exit 1
+          fi
           export GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/google-credentials.json
           echo "Starting processing..."
           node index.js

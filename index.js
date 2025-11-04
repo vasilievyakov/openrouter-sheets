@@ -83,6 +83,21 @@ async function callOpenRouter(text, prompt, retryCount = 0) {
     if (!res.ok) {
       const errorText = await res.text();
       
+      // Для ошибки 401 выводим более подробную информацию
+      if (res.status === 401) {
+        console.error(`\n❌ ОШИБКА АВТОРИЗАЦИИ (401):`);
+        console.error(`   Статус: ${res.status} ${res.statusText}`);
+        console.error(`   Ответ: ${errorText}`);
+        console.error(`   Ключ установлен: ${OPENROUTER_KEY ? 'ДА' : 'НЕТ'}`);
+        console.error(`   Длина ключа: ${OPENROUTER_KEY ? OPENROUTER_KEY.length : 0}`);
+        console.error(`   Префикс: ${OPENROUTER_KEY ? OPENROUTER_KEY.substring(0, 6) + '...' : 'N/A'}`);
+        console.error(`\n   Проверьте:`);
+        console.error(`   1. Секрет OPENROUTER_KEY установлен в GitHub Secrets`);
+        console.error(`   2. Ключ действителен и не истёк (https://openrouter.ai/keys)`);
+        console.error(`   3. На балансе OpenRouter есть средства\n`);
+        throw new Error(`OpenRouter auth error: ${errorText}`);
+      }
+      
       // Обработка rate limit (429)
       if (res.status === 429) {
         const retryAfter = parseInt(res.headers.get("retry-after") || "60");
