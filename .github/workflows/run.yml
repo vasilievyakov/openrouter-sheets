@@ -32,7 +32,7 @@ jobs:
       - name: Install dependencies
         run: |
           echo "Installing dependencies..."
-          npm install
+          npm ci
 
       - name: Setup Google Credentials
         env:
