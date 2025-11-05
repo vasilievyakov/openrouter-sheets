@@ -10,7 +10,7 @@ import fetch from "node-fetch";
 const OPENROUTER_KEY = (process.env.OPENROUTER_KEY ?? process.env.OPENROUTER_API_KEY ?? "")
   .trim()
   .replace(/^['\"]+|['\"]+$/g, "");
-const MODEL = process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini";
+const MODEL = process.env.OPENROUTER_MODEL || "tngtech/deepseek-r1t-chimera:free";
 
 if (!OPENROUTER_KEY) {
   console.error("❌ OPENROUTER_KEY не установлен");

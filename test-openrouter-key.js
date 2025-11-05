@@ -12,6 +12,7 @@ import fetch from "node-fetch";
 
 const rawKey = process.argv[2] ?? process.env.OPENROUTER_KEY ?? process.env.OPENROUTER_API_KEY ?? "";
 const OPENROUTER_KEY = rawKey.trim().replace(/^['\"]+|['\"]+$/g, "");
+const MODEL = process.env.OPENROUTER_MODEL || "tngtech/deepseek-r1t-chimera:free";
 
 if (!OPENROUTER_KEY) {
   console.error("❌ Ошибка: ключ OpenRouter не предоставлен");
@@ -40,7 +41,7 @@ async function testKey() {
         "X-Title": "OpenRouter Key Test"
       },
       body: JSON.stringify({
-        model: "openai/gpt-4o-mini",
+        model: MODEL,
         messages: [
           { role: "user", content: "Say 'OK' if you can read this." }
         ],
