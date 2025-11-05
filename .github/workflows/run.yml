@@ -89,6 +89,8 @@ jobs:
           OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL || 'tngtech/deepseek-r1t-chimera:free' }}
           GOOGLE_AI_API_KEY: ${{ secrets.GOOGLE_AI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4o-mini' }}
           LLM_CONCURRENCY: ${{ vars.LLM_CONCURRENCY || '1' }}
           LLM_REQUEST_INTERVAL_MS: ${{ vars.LLM_REQUEST_INTERVAL_MS || '6500' }}
           BATCH_SIZE: ${{ env.BATCH_SIZE || '20' }}
@@ -96,7 +98,10 @@ jobs:
           HTTP_REFERER: https://github.com/${{ github.repository }}
           GITHUB_EVENT_PATH: ${{ github.event_path }}
         run: |
-          if [ -n "$GOOGLE_AI_API_KEY" ]; then
+          if [ -n "$OPENAI_API_KEY" ]; then
+            echo "🧠 Провайдер: OpenAI"
+            echo "🧠 Модель: $OPENAI_MODEL"
+          elif [ -n "$GOOGLE_AI_API_KEY" ]; then
             echo "🧠 Провайдер: Google AI (Gemini)"
             echo "🧠 Модель: $GEMINI_MODEL"
           else
