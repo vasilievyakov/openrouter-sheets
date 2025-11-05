@@ -3,7 +3,20 @@ name: Process Google Sheet
 on:
   repository_dispatch:
     types: [run-openrouter]
-  workflow_dispatch:  # Добавляем возможность ручного запуска
+  workflow_dispatch:  # Ручной запуск с параметрами
+    inputs:
+      spreadsheetId:
+        description: "Google Spreadsheet ID"
+        required: true
+      sheetName:
+        description: "Лист (Sheet)"
+        required: true
+      prompt:
+        description: "Промпт для обработки"
+        required: true
+      columnIndex:
+        description: "Номер колонки для записи (1 = A)"
+        required: true
 
 jobs:
   run:
@@ -76,7 +89,7 @@ jobs:
           OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL || 'tngtech/deepseek-r1t-chimera:free' }}
           BATCH_SIZE: ${{ env.BATCH_SIZE || '20' }}
           GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
-          HTTP_REFERER: ${{ github.repositoryUrl }}
+          HTTP_REFERER: https://github.com/${{ github.repository }}
           GITHUB_EVENT_PATH: ${{ github.event_path }}
         run: |
           if [ -z "$OPENROUTER_KEY" ]; then
@@ -94,7 +107,7 @@ jobs:
           fi
           export GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/google-credentials.json
           echo "Starting processing..."
-          node index.js
+          node index.js "${{ github.event.inputs.spreadsheetId }}" "${{ github.event.inputs.sheetName }}" "${{ github.event.inputs.prompt }}" "${{ github.event.inputs.columnIndex }}"
 
       - name: Cleanup
         if: always()
