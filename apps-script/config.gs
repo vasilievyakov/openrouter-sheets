@@ -16,7 +16,9 @@ const GITHUB_TOKEN = "ghp_YOUR_PERSONAL_ACCESS_TOKEN_HERE";
  */
 function getGitHubToken() {
   var prop = PropertiesService.getScriptProperties().getProperty('GITHUB_TOKEN');
-  return (prop && prop.trim() !== '') ? prop : GITHUB_TOKEN;
+  var value = (prop && prop.trim() !== '') ? prop : GITHUB_TOKEN;
+  // Удаляем случайные пробелы/кавычки вокруг токена
+  return value ? value.trim().replace(/^["']+|["']+$/g, '') : value;
 }
 
 /**

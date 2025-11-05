@@ -100,3 +100,31 @@ function runPrompt() {
   }
 }
 
+/**
+ * Быстрая проверка авторизации к GitHub из Apps Script.
+ * Вызывает /user с вашим GITHUB_TOKEN и выводит статус.
+ */
+function testGithubAuth() {
+  try {
+    var token = getGitHubToken();
+    if (!token || token.length < 10) {
+      SpreadsheetApp.getUi().alert("GITHUB_TOKEN отсутствует или слишком короткий");
+      return;
+    }
+    var res = UrlFetchApp.fetch("https://api.github.com/user", {
+      method: "get",
+      headers: {
+        Authorization: "token " + token,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "Google-Apps-Script"
+      },
+      muteHttpExceptions: true
+    });
+    var msg = "Status: " + res.getResponseCode() + "\n" + res.getContentText();
+    SpreadsheetApp.getUi().alert(msg);
+  } catch (e) {
+    SpreadsheetApp.getUi().alert("Ошибка теста: " + e);
+  }
+}
+
