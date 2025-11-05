@@ -1,0 +1,49 @@
+name: Inspect OpenRouter Models
+
+on:
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: "Regex filter for model ids"
+        required: false
+        default: "deepseek|chimera|r1"
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        run: |
+          if command -v node &> /dev/null; then
+            node --version
+            npm --version
+          else
+            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+            node --version
+            npm --version
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: List matching models
+        env:
+          OPENROUTER_KEY: ${{ secrets.OPENROUTER_KEY }}
+          HTTP_REFERER: https://github.com/${{ github.repository }}
+          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL || '' }}
+        run: |
+          node list-models.js "${{ github.event.inputs.filter }}"
+
+      - name: Test selected model via chat completion
+        env:
+          OPENROUTER_KEY: ${{ secrets.OPENROUTER_KEY }}
+          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL || 'deepseek/deepseek-r1:free' }}
+          HTTP_REFERER: https://github.com/${{ github.repository }}
+        run: |
+          node test-openrouter-key.js
+
+
