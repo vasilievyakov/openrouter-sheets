@@ -87,6 +87,8 @@ jobs:
         env:
           OPENROUTER_KEY: ${{ secrets.OPENROUTER_KEY }}
           OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL || 'tngtech/deepseek-r1t-chimera:free' }}
+          GOOGLE_AI_API_KEY: ${{ secrets.GOOGLE_AI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-1.5-flash-latest' }}
           BATCH_SIZE: ${{ env.BATCH_SIZE || '20' }}
           GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
           HTTP_REFERER: https://github.com/${{ github.repository }}
@@ -100,7 +102,13 @@ jobs:
           echo "   - Установлен: ✅"
           echo "   - Длина: ${#OPENROUTER_KEY} символов"
           echo "   - Начинается с: ${OPENROUTER_KEY:0:3}..."
-          echo "🧠 Модель: $OPENROUTER_MODEL"
+          if [ -n "$GOOGLE_AI_API_KEY" ]; then
+            echo "🧠 Провайдер: Google AI (Gemini)"
+            echo "🧠 Модель: $GEMINI_MODEL"
+          else
+            echo "🧠 Провайдер: OpenRouter"
+            echo "🧠 Модель: $OPENROUTER_MODEL"
+          fi
           if [ ${#OPENROUTER_KEY} -lt 10 ]; then
             echo "❌ OPENROUTER_KEY слишком короткий (${#OPENROUTER_KEY} символов). Ожидается минимум 10 символов"
             exit 1

@@ -9,6 +9,7 @@
     "test": "node index.js",
     "check": "node check-config.js",
     "test:openrouter": "node test-openrouter.js",
+    "test:gemini": "node test-gemini.js",
     "test:sheets": "node test-googlesheets.js",
     "test:all": "node test-system.js",
     "check:workflow": "node check-workflow-status.js"

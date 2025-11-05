@@ -7,6 +7,10 @@ const rawOpenRouterKey = process.env.OPENROUTER_KEY ?? process.env.OPENROUTER_AP
 const OPENROUTER_KEY = rawOpenRouterKey.trim().replace(/^['"]+|['"]+$/g, "");
 const GOOGLE_CREDENTIALS = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 const MODEL = process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini";
+// Google AI Studio (Gemini)
+const rawGoogleApiKey = process.env.GOOGLE_AI_API_KEY ?? "";
+const GOOGLE_AI_API_KEY = rawGoogleApiKey.trim().replace(/^['"]+|['"]+$/g, "");
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash-latest";
 const BATCH_SIZE = parseInt(process.env.BATCH_SIZE || "20");
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 2000; // мс
@@ -152,11 +156,83 @@ async function callOpenRouter(text, prompt, retryCount = 0) {
 }
 
 /**
- * Обрабатывает батч текстов через OpenRouter
+ * Выполняет запрос к Google AI Studio (Gemini) с retry логикой
+ */
+async function callGemini(text, prompt, retryCount = 0) {
+  const cacheKey = `gemini:${prompt}:${text}`;
+
+  if (cache.has(cacheKey)) {
+    console.log(`[CACHE] Использован кэш (Gemini) для: ${text.substring(0, 50)}...`);
+    return cache.get(cacheKey);
+  }
+
+  if (!GOOGLE_AI_API_KEY || GOOGLE_AI_API_KEY.length === 0) {
+    throw new Error("GOOGLE_AI_API_KEY не установлен или пустой");
+  }
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent`;
+  const body = {
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: `Ты анализируешь новости. Отвечай кратко и точно.\n\n${prompt}\n\n${text}` }
+        ]
+      }
+    ]
+  };
+
+  try {
+    const res = await fetch(url + `?key=${GOOGLE_AI_API_KEY}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      if (res.status === 429 && retryCount < MAX_RETRIES) {
+        const delay = RETRY_DELAY * Math.pow(2, retryCount);
+        console.log(`[RETRY] Gemini rate/server error ${res.status}, повтор через ${delay}мс...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return callGemini(text, prompt, retryCount + 1);
+      }
+      throw new Error(`Gemini API error: ${res.status} - ${errorText}`);
+    }
+
+    const data = await res.json();
+    const result = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    cache.set(cacheKey, result);
+    return result;
+  } catch (error) {
+    if (retryCount < MAX_RETRIES) {
+      const delay = RETRY_DELAY * Math.pow(2, retryCount);
+      console.log(`[RETRY] Ошибка сети (Gemini), повтор через ${delay}мс: ${error.message}`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return callGemini(text, prompt, retryCount + 1);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Маршрутизатор провайдера: если есть GOOGLE_AI_API_KEY, используем Gemini; иначе OpenRouter
+ */
+async function callLLM(text, prompt, retryCount = 0) {
+  if (GOOGLE_AI_API_KEY) {
+    return callGemini(text, prompt, retryCount);
+  }
+  return callOpenRouter(text, prompt, retryCount);
+}
+
+/**
+ * Обрабатывает батч текстов через выбранный LLM
  */
 async function processBatch(texts, prompt) {
   const promises = texts.map(text => 
-    callOpenRouter(text || "", prompt).catch(error => {
+    callLLM(text || "", prompt).catch(error => {
       console.error(`Ошибка обработки текста: ${error.message}`);
       return `[ОШИБКА: ${error.message}]`;
     })
@@ -246,15 +322,17 @@ function validateInputs(spreadsheetId, sheetName, prompt, columnIndex) {
  * Основная функция обработки таблицы
  */
 export async function processSheet(spreadsheetId, sheetName, prompt, columnIndex) {
-  if (!OPENROUTER_KEY || OPENROUTER_KEY.trim().length === 0) {
-    throw new Error("OPENROUTER_KEY environment variable is required and must not be empty");
+  // Требуем хотя бы один провайдер
+  if (!GOOGLE_AI_API_KEY && (!OPENROUTER_KEY || OPENROUTER_KEY.trim().length === 0)) {
+    throw new Error("Нужен хотя бы один ключ: GOOGLE_AI_API_KEY (Gemini) или OPENROUTER_KEY");
   }
-  
-  // Проверяем формат ключа (должен начинаться с sk-or-v1-)
-  const trimmedKey = OPENROUTER_KEY.trim();
-  if (!trimmedKey.startsWith('sk-or-v1-') && !trimmedKey.startsWith('sk-')) {
-    console.warn(`⚠️  Внимание: Ключ не начинается с ожидаемого префикса (sk-or-v1- или sk-)`);
-    console.warn(`   Префикс ключа: ${trimmedKey.substring(0, 10)}...`);
+
+  if (!GOOGLE_AI_API_KEY && OPENROUTER_KEY) {
+    const trimmedKey = OPENROUTER_KEY.trim();
+    if (!trimmedKey.startsWith('sk-or-v1-') && !trimmedKey.startsWith('sk-')) {
+      console.warn(`⚠️  Внимание: Ключ не начинается с ожидаемого префикса (sk-or-v1- или sk-)`);
+      console.warn(`   Префикс ключа: ${trimmedKey.substring(0, 10)}...`);
+    }
   }
 
   // Валидация входных данных
@@ -265,7 +343,13 @@ export async function processSheet(spreadsheetId, sheetName, prompt, columnIndex
   console.log(`   Sheet: ${sheetName}`);
   console.log(`   Prompt: ${prompt}`);
   console.log(`   Column: ${columnIndex}`);
-  console.log(`   Model: ${MODEL}`);
+  if (GOOGLE_AI_API_KEY) {
+    console.log(`   Provider: Google AI (Gemini)`);
+    console.log(`   Model: ${GEMINI_MODEL}`);
+  } else {
+    console.log(`   Provider: OpenRouter`);
+    console.log(`   Model: ${MODEL}`);
+  }
   console.log(`   Batch size: ${BATCH_SIZE}\n`);
 
   const sheets = initGoogleSheets();
