@@ -15,6 +15,9 @@ const BATCH_SIZE = parseInt(process.env.BATCH_SIZE || "20");
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 2000; // мс
 const RATE_LIMIT_DELAY = 100; // задержка между батчами для Google Sheets API (100 req/sec)
+// Ограничение частоты для LLM (во избежание 429 у Gemini free tier ~10 rpm)
+const LLM_CONCURRENCY = parseInt(process.env.LLM_CONCURRENCY || "1");
+const LLM_REQUEST_INTERVAL_MS = parseInt(process.env.LLM_REQUEST_INTERVAL_MS || "6500");
 
 // Кэш для уже обработанных запросов (в памяти)
 const cache = new Map();
@@ -194,7 +197,7 @@ async function callGemini(text, prompt, retryCount = 0) {
     });
 
     if (!res.ok) {
-      const errorText = await res.text();
+      let errorText = await res.text();
       if ((res.status === 404 || res.status === 400)) {
         // Fallback на v1beta для несовместимых слугов
         res = await fetch(baseUrlV1beta + `?key=${GOOGLE_AI_API_KEY}`, {
@@ -204,8 +207,22 @@ async function callGemini(text, prompt, retryCount = 0) {
         });
       }
       if (res.status === 429 && retryCount < MAX_RETRIES) {
-        const delay = RETRY_DELAY * Math.pow(2, retryCount);
-        console.log(`[RETRY] Gemini rate/server error ${res.status}, повтор через ${delay}мс...`);
+        // Пытаемся извлечь Retry-After/RetryInfo
+        let delay = RETRY_DELAY * Math.pow(2, retryCount);
+        try {
+          const parsed = JSON.parse(errorText || '{}');
+          const details = parsed?.error?.details || [];
+          const retry = details.find(d => (d['@type'] || '').includes('google.rpc.RetryInfo'));
+          if (retry?.retryDelay) {
+            const m = /^(\d+)(?:\.(\d+))?s$/.exec(retry.retryDelay);
+            if (m) {
+              const secs = parseInt(m[1], 10);
+              const frac = m[2] ? parseInt(m[2], 10) / Math.pow(10, m[2].length) : 0;
+              delay = Math.max(delay, Math.ceil((secs + frac) * 1000));
+            }
+          }
+        } catch (_) {}
+        console.log(`[RETRY] Gemini 429, ожидание ${delay}мс...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         return callGemini(text, prompt, retryCount + 1);
       }
@@ -244,14 +261,32 @@ async function callLLM(text, prompt, retryCount = 0) {
  * Обрабатывает батч текстов через выбранный LLM
  */
 async function processBatch(texts, prompt) {
-  const promises = texts.map(text => 
-    callLLM(text || "", prompt).catch(error => {
-      console.error(`Ошибка обработки текста: ${error.message}`);
-      return `[ОШИБКА: ${error.message}]`;
-    })
-  );
+  // Ограничиваем параллелизм и частоту запросов к LLM, чтобы избежать 429
+  const results = new Array(texts.length);
+  let index = 0;
 
-  return Promise.all(promises);
+  async function worker(workerId) {
+    while (true) {
+      const current = index++;
+      if (current >= texts.length) break;
+      const text = texts[current] || "";
+      try {
+        const r = await callLLM(text, prompt);
+        results[current] = r;
+      } catch (error) {
+        console.error(`Ошибка обработки текста: ${error.message}`);
+        results[current] = `[ОШИБКА: ${error.message}]`;
+      }
+      // Пауза между запросами (даже при параллелизме каждый worker будет ждать)
+      if (current + 1 < texts.length) {
+        await new Promise(resolve => setTimeout(resolve, LLM_REQUEST_INTERVAL_MS));
+      }
+    }
+  }
+
+  const workers = Array.from({ length: Math.max(1, LLM_CONCURRENCY) }, (_, i) => worker(i));
+  await Promise.all(workers);
+  return results;
 }
 
 /**
