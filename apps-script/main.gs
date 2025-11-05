@@ -58,11 +58,11 @@ function runPrompt() {
   try {
     // Отправляем запрос на GitHub Actions repository_dispatch
     // Формат: https://api.github.com/repos/OWNER/REPO/dispatches
-    const response = UrlFetchApp.fetch(WEBHOOK_URL, {
+    const response = UrlFetchApp.fetch(getWebhookUrl(), {
       method: "post",
       contentType: "application/json",
       headers: {
-        "Authorization": `token ${GITHUB_TOKEN}`,
+        "Authorization": `token ${getGitHubToken()}`,
         "Accept": "application/vnd.github.v3+json",
         "User-Agent": "Google-Apps-Script"
       },

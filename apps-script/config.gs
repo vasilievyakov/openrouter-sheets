@@ -11,6 +11,22 @@ const WEBHOOK_URL = "https://api.github.com/repos/vasilievyakov/openrouter-sheet
 // Создайте токен здесь: https://github.com/settings/tokens
 // Нужны права: repo (для repository_dispatch)
 const GITHUB_TOKEN = "ghp_YOUR_PERSONAL_ACCESS_TOKEN_HERE";
+/**
+ * Возвращает GitHub Personal Access Token из Script Properties или из константы.
+ */
+function getGitHubToken() {
+  var prop = PropertiesService.getScriptProperties().getProperty('GITHUB_TOKEN');
+  return (prop && prop.trim() !== '') ? prop : GITHUB_TOKEN;
+}
+
+/**
+ * Возвращает WEBHOOK_URL из Script Properties или из константы.
+ */
+function getWebhookUrl() {
+  var prop = PropertiesService.getScriptProperties().getProperty('WEBHOOK_URL');
+  return (prop && prop.trim() !== '') ? prop : WEBHOOK_URL;
+}
+
 
 // Альтернативный вариант: если используете собственный сервер
 // const WEBHOOK_URL = "https://your-server.com/api/process-sheet";
