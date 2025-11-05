@@ -110,6 +110,17 @@ jobs:
             echo "🧠 Модель: $OPENROUTER_MODEL"
           fi
           export GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/google-credentials.json
+          # Guard: if manual run without inputs, perform smoke test and exit 0
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && { [ -z "${{ github.event.inputs.spreadsheetId }}" ] || [ -z "${{ github.event.inputs.sheetName }}" ] || [ -z "${{ github.event.inputs.prompt }}" ] || [ -z "${{ github.event.inputs.columnIndex }}" ]; }; then
+            echo "ℹ️  No inputs provided for manual run. Running smoke test instead..."
+            if [ -n "$GOOGLE_AI_API_KEY" ]; then
+              node test-gemini.js || true
+            else
+              node test-openrouter-key.js || true
+            fi
+            exit 0
+          fi
+
           echo "Starting processing..."
           node index.js "${{ github.event.inputs.spreadsheetId }}" "${{ github.event.inputs.sheetName }}" "${{ github.event.inputs.prompt }}" "${{ github.event.inputs.columnIndex }}"
 

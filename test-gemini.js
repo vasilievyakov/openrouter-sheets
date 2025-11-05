@@ -11,15 +11,34 @@ if (!API_KEY) {
 }
 
 async function main() {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(MODEL)}:generateContent?key=${API_KEY}`;
+  // Пробуем v1, при ошибке fallback на v1beta
+  const urlV1 = `https://generativelanguage.googleapis.com/v1/models/${encodeURIComponent(MODEL)}:generateContent?key=${API_KEY}`;
+  const urlV1beta = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(MODEL)}:generateContent?key=${API_KEY}`;
   try {
-    const res = await fetch(url, {
+    let res = await fetch(urlV1, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [ { role: "user", parts: [ { text: "Ответь одним словом: работает" } ] } ]
       })
     });
+    if (!res.ok) {
+      const txt = await res.text();
+      // fallback на v1beta, если 404/400 на v1
+      if (res.status === 404 || res.status === 400) {
+        res = await fetch(urlV1beta, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [ { role: "user", parts: [ { text: "Ответь одним словом: работает" } ] } ]
+          })
+        });
+      } else {
+        console.error(`❌ Gemini API: ${res.status}`);
+        console.error(txt);
+        process.exit(1);
+      }
+    }
     if (!res.ok) {
       const txt = await res.text();
       console.error(`❌ Gemini API: ${res.status}`);

@@ -10,7 +10,7 @@ const MODEL = process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini";
 // Google AI Studio (Gemini)
 const rawGoogleApiKey = process.env.GOOGLE_AI_API_KEY ?? "";
 const GOOGLE_AI_API_KEY = rawGoogleApiKey.trim().replace(/^['"]+|['"]+$/g, "");
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash-latest";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const BATCH_SIZE = parseInt(process.env.BATCH_SIZE || "20");
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 2000; // мс
@@ -170,7 +170,9 @@ async function callGemini(text, prompt, retryCount = 0) {
     throw new Error("GOOGLE_AI_API_KEY не установлен или пустой");
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent`;
+  // Пробуем v1, при необходимости клиенский код может fallback на v1beta
+  const baseUrlV1 = `https://generativelanguage.googleapis.com/v1/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent`;
+  const baseUrlV1beta = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent`;
   const body = {
     contents: [
       {
@@ -183,7 +185,7 @@ async function callGemini(text, prompt, retryCount = 0) {
   };
 
   try {
-    const res = await fetch(url + `?key=${GOOGLE_AI_API_KEY}`, {
+    let res = await fetch(baseUrlV1 + `?key=${GOOGLE_AI_API_KEY}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -193,13 +195,24 @@ async function callGemini(text, prompt, retryCount = 0) {
 
     if (!res.ok) {
       const errorText = await res.text();
+      if ((res.status === 404 || res.status === 400)) {
+        // Fallback на v1beta для несовместимых слугов
+        res = await fetch(baseUrlV1beta + `?key=${GOOGLE_AI_API_KEY}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+      }
       if (res.status === 429 && retryCount < MAX_RETRIES) {
         const delay = RETRY_DELAY * Math.pow(2, retryCount);
         console.log(`[RETRY] Gemini rate/server error ${res.status}, повтор через ${delay}мс...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         return callGemini(text, prompt, retryCount + 1);
       }
-      throw new Error(`Gemini API error: ${res.status} - ${errorText}`);
+      if (!res.ok) {
+        const txt2 = await res.text().catch(() => errorText);
+        throw new Error(`Gemini API error: ${res.status} - ${txt2 || errorText}`);
+      }
     }
 
     const data = await res.json();
@@ -405,7 +418,8 @@ async function main() {
     try {
       const fs = await import("fs");
       const eventData = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
-      payload = eventData.client_payload || {};
+      // repository_dispatch → client_payload; workflow_dispatch → inputs
+      payload = eventData.client_payload || eventData.inputs || {};
       console.log("📥 Получены данные из GitHub Actions события");
     } catch (error) {
       console.error(`Ошибка чтения GitHub события: ${error.message}`);
