@@ -7,7 +7,9 @@
 
 import fetch from "node-fetch";
 
-const OPENROUTER_KEY = process.env.OPENROUTER_KEY;
+const OPENROUTER_KEY = (process.env.OPENROUTER_KEY ?? process.env.OPENROUTER_API_KEY ?? "")
+  .trim()
+  .replace(/^['\"]+|['\"]+$/g, "");
 const MODEL = process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini";
 
 if (!OPENROUTER_KEY) {

@@ -10,7 +10,8 @@
 
 import fetch from "node-fetch";
 
-const OPENROUTER_KEY = process.argv[2] || process.env.OPENROUTER_KEY;
+const rawKey = process.argv[2] ?? process.env.OPENROUTER_KEY ?? process.env.OPENROUTER_API_KEY ?? "";
+const OPENROUTER_KEY = rawKey.trim().replace(/^['\"]+|['\"]+$/g, "");
 
 if (!OPENROUTER_KEY) {
   console.error("❌ Ошибка: ключ OpenRouter не предоставлен");

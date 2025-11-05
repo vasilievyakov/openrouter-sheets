@@ -2,7 +2,9 @@ import fetch from "node-fetch";
 import { google } from "googleapis";
 import { readFileSync, existsSync } from "fs";
 
-const OPENROUTER_KEY = process.env.OPENROUTER_KEY;
+// Accept both OPENROUTER_KEY and OPENROUTER_API_KEY; strip accidental surrounding quotes
+const rawOpenRouterKey = process.env.OPENROUTER_KEY ?? process.env.OPENROUTER_API_KEY ?? "";
+const OPENROUTER_KEY = rawOpenRouterKey.trim().replace(/^['"]+|['"]+$/g, "");
 const GOOGLE_CREDENTIALS = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 const MODEL = process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini";
 const BATCH_SIZE = parseInt(process.env.BATCH_SIZE || "20");
@@ -68,6 +70,11 @@ async function callOpenRouter(text, prompt, retryCount = 0) {
     temperature: 0.3
   };
 
+  // Проверяем, что ключ установлен и не пустой
+  if (!OPENROUTER_KEY || OPENROUTER_KEY.length === 0) {
+    throw new Error("OPENROUTER_KEY не установлен или пустой");
+  }
+
   try {
     const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
@@ -85,16 +92,22 @@ async function callOpenRouter(text, prompt, retryCount = 0) {
       
       // Для ошибки 401 выводим более подробную информацию
       if (res.status === 401) {
+        const keyPreview = OPENROUTER_KEY 
+          ? `${OPENROUTER_KEY.substring(0, 10)}...${OPENROUTER_KEY.substring(OPENROUTER_KEY.length - 4)}` 
+          : 'N/A';
         console.error(`\n❌ ОШИБКА АВТОРИЗАЦИИ (401):`);
         console.error(`   Статус: ${res.status} ${res.statusText}`);
         console.error(`   Ответ: ${errorText}`);
         console.error(`   Ключ установлен: ${OPENROUTER_KEY ? 'ДА' : 'НЕТ'}`);
         console.error(`   Длина ключа: ${OPENROUTER_KEY ? OPENROUTER_KEY.length : 0}`);
-        console.error(`   Префикс: ${OPENROUTER_KEY ? OPENROUTER_KEY.substring(0, 6) + '...' : 'N/A'}`);
+        console.error(`   Ключ (превью): ${keyPreview}`);
+        console.error(`   Заголовок Authorization: Bearer ${keyPreview}`);
         console.error(`\n   Проверьте:`);
         console.error(`   1. Секрет OPENROUTER_KEY установлен в GitHub Secrets`);
         console.error(`   2. Ключ действителен и не истёк (https://openrouter.ai/keys)`);
-        console.error(`   3. На балансе OpenRouter есть средства\n`);
+        console.error(`   3. Ключ не содержит лишних пробелов или символов`);
+        console.error(`   4. На балансе OpenRouter есть средства`);
+        console.error(`   5. Ключ имеет правильный формат (обычно начинается с sk-or-v1-)\n`);
         throw new Error(`OpenRouter auth error: ${errorText}`);
       }
       
@@ -233,8 +246,15 @@ function validateInputs(spreadsheetId, sheetName, prompt, columnIndex) {
  * Основная функция обработки таблицы
  */
 export async function processSheet(spreadsheetId, sheetName, prompt, columnIndex) {
-  if (!OPENROUTER_KEY) {
-    throw new Error("OPENROUTER_KEY environment variable is required");
+  if (!OPENROUTER_KEY || OPENROUTER_KEY.trim().length === 0) {
+    throw new Error("OPENROUTER_KEY environment variable is required and must not be empty");
+  }
+  
+  // Проверяем формат ключа (должен начинаться с sk-or-v1-)
+  const trimmedKey = OPENROUTER_KEY.trim();
+  if (!trimmedKey.startsWith('sk-or-v1-') && !trimmedKey.startsWith('sk-')) {
+    console.warn(`⚠️  Внимание: Ключ не начинается с ожидаемого префикса (sk-or-v1- или sk-)`);
+    console.warn(`   Префикс ключа: ${trimmedKey.substring(0, 10)}...`);
   }
 
   // Валидация входных данных
