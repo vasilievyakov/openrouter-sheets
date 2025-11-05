@@ -429,11 +429,15 @@ async function main() {
   // Или из аргументов командной строки (для локального тестирования)
   const args = process.argv.slice(2);
   if (args.length >= 4) {
-    payload.spreadsheetId = args[0];
-    payload.sheetName = args[1];
-    payload.prompt = args[2];
-    payload.columnIndex = parseInt(args[3]);
-    console.log("📥 Получены данные из аргументов командной строки");
+    const [a0, a1, a2, a3] = args;
+    const allFilled = [a0, a1, a2, a3].every(v => typeof v === "string" && v.trim() !== "");
+    if (allFilled) {
+      payload.spreadsheetId = a0;
+      payload.sheetName = a1;
+      payload.prompt = a2;
+      payload.columnIndex = parseInt(a3);
+      console.log("📥 Получены данные из аргументов командной строки");
+    }
   }
 
   // Валидация payload

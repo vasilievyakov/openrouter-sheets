@@ -122,7 +122,11 @@ jobs:
           fi
 
           echo "Starting processing..."
-          node index.js "${{ github.event.inputs.spreadsheetId }}" "${{ github.event.inputs.sheetName }}" "${{ github.event.inputs.prompt }}" "${{ github.event.inputs.columnIndex }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            node index.js "${{ github.event.inputs.spreadsheetId }}" "${{ github.event.inputs.sheetName }}" "${{ github.event.inputs.prompt }}" "${{ github.event.inputs.columnIndex }}"
+          else
+            node index.js
+          fi
 
       - name: Cleanup
         if: always()
