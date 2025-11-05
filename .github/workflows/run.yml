@@ -94,24 +94,20 @@ jobs:
           HTTP_REFERER: https://github.com/${{ github.repository }}
           GITHUB_EVENT_PATH: ${{ github.event_path }}
         run: |
-          if [ -z "$OPENROUTER_KEY" ]; then
-            echo "❌ OPENROUTER_KEY secret is not set"
-            exit 1
-          fi
-          echo "🔑 OPENROUTER_KEY проверка:"
-          echo "   - Установлен: ✅"
-          echo "   - Длина: ${#OPENROUTER_KEY} символов"
-          echo "   - Начинается с: ${OPENROUTER_KEY:0:3}..."
           if [ -n "$GOOGLE_AI_API_KEY" ]; then
             echo "🧠 Провайдер: Google AI (Gemini)"
             echo "🧠 Модель: $GEMINI_MODEL"
           else
+            if [ -z "$OPENROUTER_KEY" ]; then
+              echo "❌ Ни GOOGLE_AI_API_KEY, ни OPENROUTER_KEY не заданы"
+              exit 1
+            fi
+            echo "🔑 OPENROUTER_KEY проверка:"
+            echo "   - Установлен: ✅"
+            echo "   - Длина: ${#OPENROUTER_KEY} символов"
+            echo "   - Начинается с: ${OPENROUTER_KEY:0:3}..."
             echo "🧠 Провайдер: OpenRouter"
             echo "🧠 Модель: $OPENROUTER_MODEL"
-          fi
-          if [ ${#OPENROUTER_KEY} -lt 10 ]; then
-            echo "❌ OPENROUTER_KEY слишком короткий (${#OPENROUTER_KEY} символов). Ожидается минимум 10 символов"
-            exit 1
           fi
           export GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/google-credentials.json
           echo "Starting processing..."
