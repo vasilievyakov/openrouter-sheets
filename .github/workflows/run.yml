@@ -85,10 +85,6 @@ jobs:
 
       - name: Process Sheet
         env:
-          OPENROUTER_KEY: ${{ secrets.OPENROUTER_KEY }}
-          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL || 'tngtech/deepseek-r1t-chimera:free' }}
-          GOOGLE_AI_API_KEY: ${{ secrets.GOOGLE_AI_API_KEY }}
-          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4o-mini' }}
           LLM_CONCURRENCY: ${{ vars.LLM_CONCURRENCY || '1' }}
@@ -98,24 +94,12 @@ jobs:
           HTTP_REFERER: https://github.com/${{ github.repository }}
           GITHUB_EVENT_PATH: ${{ github.event_path }}
         run: |
-          if [ -n "$OPENAI_API_KEY" ]; then
-            echo "🧠 Провайдер: OpenAI"
-            echo "🧠 Модель: $OPENAI_MODEL"
-          elif [ -n "$GOOGLE_AI_API_KEY" ]; then
-            echo "🧠 Провайдер: Google AI (Gemini)"
-            echo "🧠 Модель: $GEMINI_MODEL"
-          else
-            if [ -z "$OPENROUTER_KEY" ]; then
-              echo "❌ Ни GOOGLE_AI_API_KEY, ни OPENROUTER_KEY не заданы"
-              exit 1
-            fi
-            echo "🔑 OPENROUTER_KEY проверка:"
-            echo "   - Установлен: ✅"
-            echo "   - Длина: ${#OPENROUTER_KEY} символов"
-            echo "   - Начинается с: ${OPENROUTER_KEY:0:3}..."
-            echo "🧠 Провайдер: OpenRouter"
-            echo "🧠 Модель: $OPENROUTER_MODEL"
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "❌ OPENAI_API_KEY secret is not set"
+            exit 1
           fi
+          echo "🧠 Провайдер: OpenAI"
+          echo "🧠 Модель: $OPENAI_MODEL"
           export GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/google-credentials.json
           # Guard: if manual run without inputs, perform smoke test and exit 0
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && { [ -z "${{ github.event.inputs.spreadsheetId }}" ] || [ -z "${{ github.event.inputs.sheetName }}" ] || [ -z "${{ github.event.inputs.prompt }}" ] || [ -z "${{ github.event.inputs.columnIndex }}" ]; }; then

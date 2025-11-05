@@ -2,18 +2,10 @@ import fetch from "node-fetch";
 import { google } from "googleapis";
 import { readFileSync, existsSync } from "fs";
 
-// Accept both OPENROUTER_KEY and OPENROUTER_API_KEY; strip accidental surrounding quotes
-const rawOpenRouterKey = process.env.OPENROUTER_KEY ?? process.env.OPENROUTER_API_KEY ?? "";
-const OPENROUTER_KEY = rawOpenRouterKey.trim().replace(/^['"]+|['"]+$/g, "");
 const GOOGLE_CREDENTIALS = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-const MODEL = process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini";
-// Google AI Studio (Gemini)
-const rawGoogleApiKey = process.env.GOOGLE_AI_API_KEY ?? "";
-const GOOGLE_AI_API_KEY = rawGoogleApiKey.trim().replace(/^['"]+|['"]+$/g, "");
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-// OpenAI
+// OpenAI only
 const rawOpenAIKey = process.env.OPENAI_API_KEY ?? "";
-const OPENAI_API_KEY = rawOpenAIKey.trim().replace(/^[']+|[']+$/g, "").replace(/^["]+|["]+$/g, "");
+const OPENAI_API_KEY = rawOpenAIKey.trim().replace(/^['"]+|['"]+$/g, "");
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const BATCH_SIZE = parseInt(process.env.BATCH_SIZE || "20");
 const MAX_RETRIES = 3;
@@ -320,16 +312,10 @@ async function callOpenAI(text, prompt, retryCount = 0) {
 }
 
 /**
- * Маршрутизатор провайдера: если есть GOOGLE_AI_API_KEY, используем Gemini; иначе OpenRouter
+ * Единый вызов LLM: только OpenAI
  */
 async function callLLM(text, prompt, retryCount = 0) {
-  if (OPENAI_API_KEY) {
-    return callOpenAI(text, prompt, retryCount);
-  }
-  if (GOOGLE_AI_API_KEY) {
-    return callGemini(text, prompt, retryCount);
-  }
-  return callOpenRouter(text, prompt, retryCount);
+  return callOpenAI(text, prompt, retryCount);
 }
 
 /**
@@ -445,17 +431,9 @@ function validateInputs(spreadsheetId, sheetName, prompt, columnIndex) {
  * Основная функция обработки таблицы
  */
 export async function processSheet(spreadsheetId, sheetName, prompt, columnIndex) {
-  // Требуем хотя бы один провайдер
-  if (!OPENAI_API_KEY && !GOOGLE_AI_API_KEY && (!OPENROUTER_KEY || OPENROUTER_KEY.trim().length === 0)) {
-    throw new Error("Нужен ключ: OPENAI_API_KEY (OpenAI) или GOOGLE_AI_API_KEY (Gemini) или OPENROUTER_KEY");
-  }
-
-  if (!OPENAI_API_KEY && !GOOGLE_AI_API_KEY && OPENROUTER_KEY) {
-    const trimmedKey = OPENROUTER_KEY.trim();
-    if (!trimmedKey.startsWith('sk-or-v1-') && !trimmedKey.startsWith('sk-')) {
-      console.warn(`⚠️  Внимание: Ключ не начинается с ожидаемого префикса (sk-or-v1- или sk-)`);
-      console.warn(`   Префикс ключа: ${trimmedKey.substring(0, 10)}...`);
-    }
+  // Требуем OpenAI ключ
+  if (!OPENAI_API_KEY || OPENAI_API_KEY.trim().length === 0) {
+    throw new Error("OPENAI_API_KEY environment variable is required and must not be empty");
   }
 
   // Валидация входных данных
@@ -466,16 +444,8 @@ export async function processSheet(spreadsheetId, sheetName, prompt, columnIndex
   console.log(`   Sheet: ${sheetName}`);
   console.log(`   Prompt: ${prompt}`);
   console.log(`   Column: ${columnIndex}`);
-  if (OPENAI_API_KEY) {
-    console.log(`   Provider: OpenAI`);
-    console.log(`   Model: ${OPENAI_MODEL}`);
-  } else if (GOOGLE_AI_API_KEY) {
-    console.log(`   Provider: Google AI (Gemini)`);
-    console.log(`   Model: ${GEMINI_MODEL}`);
-  } else {
-    console.log(`   Provider: OpenRouter`);
-    console.log(`   Model: ${MODEL}`);
-  }
+  console.log(`   Provider: OpenAI`);
+  console.log(`   Model: ${OPENAI_MODEL}`);
   console.log(`   Batch size: ${BATCH_SIZE}\n`);
 
   const sheets = initGoogleSheets();
