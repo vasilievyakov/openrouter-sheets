@@ -455,6 +455,11 @@ async function main() {
     console.error("   - Все переменные окружения установлены");
     console.error("   - Payload содержит все необходимые поля");
     console.error("   - GitHub Actions правильно передает client_payload");
+    // Если это ручной запуск без inputs, завершаем успешно (smoke/noop)
+    if ((process.env.GITHUB_EVENT_NAME || "").trim() === "workflow_dispatch") {
+      console.log("\nℹ️  Ручной запуск без входных параметров — пропускаем обработку (noop)\n");
+      process.exit(0);
+    }
     process.exit(1);
   }
 
